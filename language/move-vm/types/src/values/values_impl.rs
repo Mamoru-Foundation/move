@@ -3686,10 +3686,84 @@ impl ValueImpl {
             (layout, val) => panic!("Cannot convert value {:?} as {:?}", val, layout),
         }
     }
+
+    pub fn try_as_move_value(&self, layout: &MoveTypeLayout) -> PartialVMResult<MoveValue> {
+        use MoveTypeLayout as L;
+
+        match (layout, &self) {
+            (L::U8, ValueImpl::U8(x)) => Ok(MoveValue::U8(*x)),
+            (L::U16, ValueImpl::U16(x)) => Ok(MoveValue::U16(*x)),
+            (L::U32, ValueImpl::U32(x)) => Ok(MoveValue::U32(*x)),
+            (L::U64, ValueImpl::U64(x)) => Ok(MoveValue::U64(*x)),
+            (L::U128, ValueImpl::U128(x)) => Ok(MoveValue::U128(*x)),
+            (L::U256, ValueImpl::U256(x)) => Ok(MoveValue::U256(*x)),
+            (L::Bool, ValueImpl::Bool(x)) => Ok(MoveValue::Bool(*x)),
+            (L::Address, ValueImpl::Address(x)) => Ok(MoveValue::Address(*x)),
+
+            (L::Struct(struct_layout), ValueImpl::Container(Container::Struct(r))) => {
+                let mut fields = vec![];
+                let field_layouts = struct_layout.clone().into_fields();
+                for (v, field_layout) in r.borrow().iter().zip(field_layouts.iter()) {
+                    fields.push(v.try_as_move_value(field_layout)?);
+                }
+
+                Ok(MoveValue::Struct(
+                    MoveStruct::new(fields).decorate(struct_layout),
+                ))
+            }
+
+            (L::Vector(inner_layout), ValueImpl::Container(c)) => Ok(MoveValue::Vector(match c {
+                Container::VecU8(r) => r.borrow().iter().map(|u| MoveValue::U8(*u)).collect(),
+                Container::VecU16(r) => r.borrow().iter().map(|u| MoveValue::U16(*u)).collect(),
+                Container::VecU32(r) => r.borrow().iter().map(|u| MoveValue::U32(*u)).collect(),
+                Container::VecU64(r) => r.borrow().iter().map(|u| MoveValue::U64(*u)).collect(),
+                Container::VecU128(r) => r.borrow().iter().map(|u| MoveValue::U128(*u)).collect(),
+                Container::VecU256(r) => r.borrow().iter().map(|u| MoveValue::U256(*u)).collect(),
+                Container::VecBool(r) => r.borrow().iter().map(|u| MoveValue::Bool(*u)).collect(),
+                Container::VecAddress(r) => {
+                    r.borrow().iter().map(|u| MoveValue::Address(*u)).collect()
+                }
+                Container::Vec(r) => r
+                    .borrow()
+                    .iter()
+                    .map(|v| v.try_as_move_value(inner_layout))
+                    .collect::<PartialVMResult<_>>()?,
+                Container::Struct(_) => self.err("got struct container when converting vec")?,
+                Container::Locals(_) => self.err("got locals container when converting vec")?,
+            })),
+
+            (L::Signer, ValueImpl::Container(Container::Struct(r))) => {
+                let v = r.borrow();
+                if v.len() != 1 {
+                    self.err(format!("Unexpected signer layout: {:?}", v))?;
+                }
+                match &v[0] {
+                    ValueImpl::Address(a) => Ok(MoveValue::Signer(*a)),
+                    v => self.err(format!(
+                        "Unexpected non-address while converting signer: {:?}",
+                        v
+                    )),
+                }
+            }
+
+            (layout, val) => self.err(format!("Cannot convert value {:?} as {:?}", val, layout)),
+        }
+    }
+
+    fn err<T>(&self, message: impl Into<String>) -> PartialVMResult<T> {
+        Err(
+            PartialVMError::new(StatusCode::UNKNOWN_INVARIANT_VIOLATION_ERROR)
+                .with_message(message.into()),
+        )
+    }
 }
 
 impl Value {
     pub fn as_move_value(&self, layout: &MoveTypeLayout) -> MoveValue {
         self.0.as_move_value(layout)
+    }
+
+    pub fn try_as_move_value(&self, layout: &MoveTypeLayout) -> PartialVMResult<MoveValue> {
+        self.0.try_as_move_value(layout)
     }
 }
