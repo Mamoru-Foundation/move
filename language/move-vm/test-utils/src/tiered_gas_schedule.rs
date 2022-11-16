@@ -749,6 +749,10 @@ impl<'b> GasMeter for GasStatus<'b> {
     fn remaining_gas(&self) -> InternalGas {
         self.gas_left
     }
+
+    fn charged_already_total(&self) -> Option<InternalGas> {
+        Some(InternalGas::new(0))
+    }
 }
 
 pub fn zero_cost_schedule() -> CostTable {

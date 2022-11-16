@@ -16,6 +16,7 @@ anyhow = "1.0.52"
 fail = { version = "0.4.0", features = ['failpoints'] }
 tempfile = "3.2.0"
 memory-stats = "1.0.0"
+expect-test = "1.4.0"
 
 move-core-types = {path = "../../move-core/types" }
 move-binary-format = { path = "../../move-binary-format" }
