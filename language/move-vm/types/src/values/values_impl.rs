@@ -37,7 +37,7 @@ use std::{
 
 /// Runtime representation of a Move value.
 #[derive(Debug)]
-enum ValueImpl {
+pub enum ValueImpl {
     Invalid,
 
     U8(u8),
@@ -65,7 +65,7 @@ enum ValueImpl {
 /// Except when not owned by the VM stack, a container always lives inside an Rc<RefCell<>>,
 /// making it possible to be shared by references.
 #[derive(Debug, Clone)]
-enum Container {
+pub enum Container {
     Locals(Rc<RefCell<Vec<ValueImpl>>>),
     Vec(Rc<RefCell<Vec<ValueImpl>>>),
     Struct(Rc<RefCell<Vec<ValueImpl>>>),
@@ -83,7 +83,7 @@ enum Container {
 /// or in global storage. In the latter case, it also keeps a status flag indicating whether
 /// the container has been possibly modified.
 #[derive(Debug)]
-enum ContainerRef {
+pub enum ContainerRef {
     Local(Container),
     Global {
         status: Rc<RefCell<GlobalDataStatus>>,
@@ -95,14 +95,14 @@ enum ContainerRef {
 /// Clean - the data was only read.
 /// Dirty - the data was possibly modified.
 #[derive(Debug, Clone, Copy)]
-enum GlobalDataStatus {
+pub enum GlobalDataStatus {
     Clean,
     Dirty,
 }
 
 /// A Move reference pointing to an element in a container.
 #[derive(Debug)]
-struct IndexedRef {
+pub struct IndexedRef {
     idx: usize,
     container_ref: ContainerRef,
 }
@@ -133,7 +133,7 @@ enum ReferenceImpl {
 /// A Move value -- a wrapper around `ValueImpl` which can be created only through valid
 /// means.
 #[derive(Debug)]
-pub struct Value(ValueImpl);
+pub struct Value(pub ValueImpl);
 
 /// An integer value in Move.
 #[derive(Debug)]
@@ -270,9 +270,20 @@ fn take_unique_ownership<T: Debug>(r: Rc<RefCell<T>>) -> PartialVMResult<T> {
 }
 
 impl ContainerRef {
-    fn container(&self) -> &Container {
+    pub fn container(&self) -> &Container {
         match self {
             Self::Local(container) | Self::Global { container, .. } => container,
+        }
+    }
+
+    pub fn is_dirty(&self) -> Option<bool> {
+        if let Self::Global { status, .. } = self {
+            Some(match *status.borrow() {
+                GlobalDataStatus::Dirty => true,
+                GlobalDataStatus::Clean => false,
+            })
+        } else {
+            None
         }
     }
 
@@ -358,6 +369,28 @@ impl ValueImpl {
             // When cloning a container, we need to make sure we make a deep
             // copy of the data instead of a shallow copy of the Rc.
             Container(c) => Container(c.copy_value()?),
+        })
+    }
+
+    fn copy_value_by_ref(&self) -> PartialVMResult<Self> {
+        use ValueImpl::*;
+
+        Ok(match self {
+            Invalid => Invalid,
+
+            U8(x) => U8(*x),
+            U16(x) => U16(*x),
+            U32(x) => U32(*x),
+            U64(x) => U64(*x),
+            U128(x) => U128(*x),
+            U256(x) => U256(*x),
+            Bool(x) => Bool(*x),
+            Address(x) => Address(*x),
+
+            ContainerRef(r) => ContainerRef(r.copy_value()),
+            IndexedRef(r) => IndexedRef(r.copy_value()),
+
+            Container(c) => Container(c.copy_by_ref()),
         })
     }
 }
@@ -682,6 +715,24 @@ impl IndexedRef {
 
         let res = match self.container_ref.container() {
             Locals(r) | Vec(r) | Struct(r) => r.borrow()[self.idx].copy_value()?,
+            VecU8(r) => ValueImpl::U8(r.borrow()[self.idx]),
+            VecU16(r) => ValueImpl::U16(r.borrow()[self.idx]),
+            VecU32(r) => ValueImpl::U32(r.borrow()[self.idx]),
+            VecU64(r) => ValueImpl::U64(r.borrow()[self.idx]),
+            VecU128(r) => ValueImpl::U128(r.borrow()[self.idx]),
+            VecU256(r) => ValueImpl::U256(r.borrow()[self.idx]),
+            VecBool(r) => ValueImpl::Bool(r.borrow()[self.idx]),
+            VecAddress(r) => ValueImpl::Address(r.borrow()[self.idx]),
+        };
+
+        Ok(Value(res))
+    }
+
+    fn copy_by_ref(&self) -> PartialVMResult<Value> {
+        use Container::*;
+
+        let res = match self.container_ref.container() {
+            Locals(r) | Vec(r) | Struct(r) => r.borrow()[self.idx].copy_value_by_ref()?,
             VecU8(r) => ValueImpl::U8(r.borrow()[self.idx]),
             VecU16(r) => ValueImpl::U16(r.borrow()[self.idx]),
             VecU32(r) => ValueImpl::U32(r.borrow()[self.idx]),
@@ -2617,7 +2668,7 @@ where
 }
 
 impl Container {
-    fn raw_address(&self) -> usize {
+    pub fn raw_address(&self) -> usize {
         use Container::*;
 
         match self {
@@ -3676,10 +3727,97 @@ impl ValueImpl {
             (layout, val) => panic!("Cannot convert value {:?} as {:?}", val, layout),
         }
     }
+
+    pub fn try_as_move_value(&self, layout: &MoveTypeLayout) -> PartialVMResult<MoveValue> {
+        use MoveTypeLayout as L;
+
+        match (layout, &self) {
+            (L::U8, ValueImpl::U8(x)) => Ok(MoveValue::U8(*x)),
+            (L::U16, ValueImpl::U16(x)) => Ok(MoveValue::U16(*x)),
+            (L::U32, ValueImpl::U32(x)) => Ok(MoveValue::U32(*x)),
+            (L::U64, ValueImpl::U64(x)) => Ok(MoveValue::U64(*x)),
+            (L::U128, ValueImpl::U128(x)) => Ok(MoveValue::U128(*x)),
+            (L::U256, ValueImpl::U256(x)) => Ok(MoveValue::U256(*x)),
+            (L::Bool, ValueImpl::Bool(x)) => Ok(MoveValue::Bool(*x)),
+            (L::Address, ValueImpl::Address(x)) => Ok(MoveValue::Address(*x)),
+            (L::Struct(struct_layout), ValueImpl::Container(Container::Struct(r))) => {
+                let mut fields = vec![];
+                let field_layouts = struct_layout.clone().into_fields();
+                for (v, field_layout) in r.borrow().iter().zip(field_layouts.iter()) {
+                    fields.push(v.try_as_move_value(field_layout)?);
+                }
+
+                Ok(MoveValue::Struct(
+                    MoveStruct::new(fields).decorate(struct_layout),
+                ))
+            }
+
+            (L::Vector(inner_layout), ValueImpl::Container(c)) => Ok(MoveValue::Vector(match c {
+                Container::VecU8(r) => r.borrow().iter().map(|u| MoveValue::U8(*u)).collect(),
+                Container::VecU16(r) => r.borrow().iter().map(|u| MoveValue::U16(*u)).collect(),
+                Container::VecU32(r) => r.borrow().iter().map(|u| MoveValue::U32(*u)).collect(),
+                Container::VecU64(r) => r.borrow().iter().map(|u| MoveValue::U64(*u)).collect(),
+                Container::VecU128(r) => r.borrow().iter().map(|u| MoveValue::U128(*u)).collect(),
+                Container::VecU256(r) => r.borrow().iter().map(|u| MoveValue::U256(*u)).collect(),
+                Container::VecBool(r) => r.borrow().iter().map(|u| MoveValue::Bool(*u)).collect(),
+                Container::VecAddress(r) => {
+                    r.borrow().iter().map(|u| MoveValue::Address(*u)).collect()
+                }
+                Container::Vec(r) => r
+                    .borrow()
+                    .iter()
+                    .map(|v| v.try_as_move_value(inner_layout))
+                    .collect::<PartialVMResult<_>>()?,
+                Container::Struct(_) => self.err("got struct container when converting vec")?,
+                Container::Locals(_) => self.err("got locals container when converting vec")?,
+            })),
+
+            (L::Signer, ValueImpl::Container(Container::Struct(r))) => {
+                let v = r.borrow();
+                if v.len() != 1 {
+                    self.err(format!("Unexpected signer layout: {:?}", v))?;
+                }
+                match &v[0] {
+                    ValueImpl::Address(a) => Ok(MoveValue::Signer(*a)),
+                    v => self.err(format!(
+                        "Unexpected non-address while converting signer: {:?}",
+                        v
+                    )),
+                }
+            }
+
+            (layout, ValueImpl::ContainerRef(r)) => {
+                // Do not perform deep copy, just copy by reference
+                // it does not cause VM borrowing issue, as the value lives short
+                let container = ValueImpl::Container(r.container().copy_by_ref());
+
+                container.try_as_move_value(layout)
+            }
+
+            (layout, ValueImpl::IndexedRef(r)) => {
+                let value = r.copy_by_ref()?;
+
+                value.0.try_as_move_value(layout)
+            }
+
+            (layout, val) => self.err(format!("Cannot convert value {:?} as {:?}", val, layout)),
+        }
+    }
+
+    fn err<T>(&self, message: impl Into<String>) -> PartialVMResult<T> {
+        Err(
+            PartialVMError::new(StatusCode::UNKNOWN_INVARIANT_VIOLATION_ERROR)
+                .with_message(message.into()),
+        )
+    }
 }
 
 impl Value {
     pub fn as_move_value(&self, layout: &MoveTypeLayout) -> MoveValue {
         self.0.as_move_value(layout)
+    }
+
+    pub fn try_as_move_value(&self, layout: &MoveTypeLayout) -> PartialVMResult<MoveValue> {
+        self.0.try_as_move_value(layout)
     }
 }
