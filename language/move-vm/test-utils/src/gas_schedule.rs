@@ -264,10 +264,8 @@ fn get_simple_instruction_opcode(instr: SimpleInstruction) -> Opcodes {
 }
 
 impl<'b> GasMeter for GasStatus<'b> {
-    fn charged_already_total(&self) -> PartialVMResult<InternalGas> {
-        let used_gas = self.original_gas_left.checked_sub(self.gas_left).unwrap();
-
-        Ok(used_gas)
+    fn charged_already_total(&self) -> Option<InternalGas> {
+        self.original_gas_left.checked_sub(self.gas_left)
     }
     /// Charge an instruction and fail if not enough gas units are left.
     fn charge_simple_instr(&mut self, instr: SimpleInstruction) -> PartialVMResult<()> {

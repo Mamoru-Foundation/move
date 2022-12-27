@@ -360,7 +360,7 @@ impl VMRuntime {
         )?;
 
         let serialized_return_values = self
-            .serialize_return_values(&return_types, return_values.values?)
+            .serialize_return_values(&return_types, return_values.values)
             .map_err(|e| e.finish(Location::Undefined))?;
         let serialized_mut_ref_outputs = mut_ref_args
             .into_iter()

@@ -761,36 +761,19 @@ impl Loader {
         Ok((module, func, loaded))
     }
 
-    pub(crate) fn function_parameters(
-        &self,
-        func: &Arc<Function>,
+    pub(crate) fn function_parameters<'a>(
+        &'a self,
+        func: &'a Arc<Function>,
         module_id: &ModuleId,
-        data_store: &impl DataStore,
-    ) -> VMResult<Vec<Type>> {
+        data_store: &'a impl DataStore,
+    ) -> VMResult<impl Iterator<Item = PartialVMResult<Type>> + '_> {
         let module = self.load_module(module_id, data_store)?;
-        let params = self.function_parameters_with_module(func, &module)?;
 
-        Ok(params)
-    }
-
-    pub(crate) fn function_parameters_with_module(
-        &self,
-        func: &Arc<Function>,
-        module: &Arc<Module>,
-    ) -> VMResult<Vec<Type>> {
-        let params = func
-            .parameters
-            .0
-            .iter()
-            .map(|tok| {
-                self.module_cache
-                    .read()
-                    .make_type(BinaryIndexedView::Module(module.module()), tok)
-            })
-            .collect::<PartialVMResult<Vec<_>>>()
-            .map_err(|err| err.finish(Location::Undefined))?;
-
-        Ok(params)
+        Ok(func.parameters.0.iter().map(move |tok| {
+            self.module_cache
+                .read()
+                .make_type(BinaryIndexedView::Module(module.module()), tok)
+        }))
     }
 
     // Entry point for module publishing (`MoveVM::publish_module_bundle`).
@@ -2606,7 +2589,7 @@ impl Loader {
             }
         }
 
-        // let count_before = *count;
+        let count_before = *count;
         let struct_type = self.module_cache.read().struct_at(gidx);
         let field_tys = struct_type
             .fields
@@ -2617,19 +2600,19 @@ impl Loader {
             .iter()
             .map(|ty| self.type_to_type_layout_impl(ty, count, depth + 1))
             .collect::<PartialVMResult<Vec<_>>>()?;
-        // let field_node_count = *count - count_before;
+        let field_node_count = *count - count_before;
 
         let struct_layout = MoveStructLayout::new(field_layouts);
-        // @TODO: temporary commented, as it cause failure to run move unit tests...
-        // let mut cache = self.type_cache.write();
-        // let info = cache
-        //     .structs
-        //     .entry(gidx)
-        //     .or_insert_with(HashMap::new)
-        //     .entry(ty_args.to_vec())
-        //     .or_insert_with(StructInfo::new);
-        // info.struct_layout = Some(struct_layout.clone());
-        // info.node_count = Some(field_node_count);
+
+        let mut cache = self.type_cache.write();
+        let info = cache
+            .structs
+            .entry(gidx)
+            .or_insert_with(HashMap::new)
+            .entry(ty_args.to_vec())
+            .or_insert_with(StructInfo::new);
+        info.struct_layout = Some(struct_layout.clone());
+        info.node_count = Some(field_node_count);
 
         Ok(struct_layout)
     }
@@ -2803,31 +2786,6 @@ impl Loader {
                 );
             }
         })
-    }
-
-    fn reference_type_to_type_layout_impl(
-        &self,
-        ty: &Type,
-        count: &mut usize,
-        depth: usize,
-    ) -> PartialVMResult<MoveTypeLayout> {
-        if depth > VALUE_DEPTH_MAX {
-            return Err(PartialVMError::new(StatusCode::VM_MAX_VALUE_DEPTH_REACHED));
-        }
-        Ok(match ty {
-            Type::Reference(ty) | Type::MutableReference(ty) => {
-                self.reference_type_to_type_layout_impl(ty, count, depth + 1)?
-            }
-            _ => self.type_to_type_layout_impl(ty, count, depth + 1)?,
-        })
-    }
-
-    pub(crate) fn reference_type_to_type_layout(
-        &self,
-        ty: &Type,
-    ) -> PartialVMResult<MoveTypeLayout> {
-        let mut count = 0;
-        self.reference_type_to_type_layout_impl(ty, &mut count, 1)
     }
 
     pub(crate) fn type_to_type_tag(&self, ty: &Type) -> PartialVMResult<TypeTag> {

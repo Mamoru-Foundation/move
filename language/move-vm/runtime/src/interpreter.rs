@@ -12,13 +12,13 @@ use move_binary_format::{
     errors::*,
     file_format::{Ability, AbilitySet, Bytecode, FunctionHandleIndex, FunctionInstantiationIndex},
 };
-use move_core_types::value::MoveTypeLayout;
 use move_core_types::{
     account_address::AccountAddress,
     gas_algebra::{NumArgs, NumBytes},
-    language_storage::TypeTag,
+    language_storage::{ModuleId, TypeTag},
     trace::{CallTrace, CallType},
-    vm_status::{StatusCode, StatusType},
+    value::{MoveTypeLayout, MoveValue},
+    vm_status::{StatusCode, StatusType, VMStatus},
 };
 use move_vm_types::{
     data_store::DataStore,
@@ -32,8 +32,11 @@ use move_vm_types::{
 };
 
 use crate::native_extensions::NativeContextExtensions;
+use lru::LruCache;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{cmp::min, collections::VecDeque, fmt::Write, mem, sync::Arc};
-use tracing::{error, warn};
+use tracing::error;
 
 macro_rules! debug_write {
     ($($toks: tt)*) => {
@@ -71,12 +74,12 @@ pub(crate) struct Interpreter {
     call_stack: CallStack,
     /// Whether to perform a paranoid type safety checks at runtime.
     paranoid_type_checks: bool,
-    /// List of captured call traces
-    call_traces: Vec<CallTrace>,
+    /// List of captured calls
+    function_calls: Vec<Rc<RefCell<CallInfo>>>,
 }
 
 pub(crate) struct InterpreterEntrypointResult {
-    pub values: VMResult<Vec<Value>>,
+    pub values: Vec<Value>,
     pub call_traces: Vec<CallTrace>,
 }
 
@@ -88,6 +91,32 @@ struct TypeWithLoader<'a, 'b> {
 impl<'a, 'b> TypeView for TypeWithLoader<'a, 'b> {
     fn to_type_tag(&self) -> TypeTag {
         self.loader.type_to_type_tag(self.ty).unwrap()
+    }
+}
+
+/// Resolves string representations of [`ModuleId`].
+/// The underlying cache improves call trace collection performance by 15-20%.
+struct ModuleNameResolver {
+    cache: LruCache<ModuleId, String>,
+}
+
+impl ModuleNameResolver {
+    fn new() -> Self {
+        Self {
+            cache: LruCache::new(std::num::NonZeroUsize::new(128).unwrap()),
+        }
+    }
+
+    fn short_str_lossless(&mut self, module: ModuleId) -> String {
+        match self.cache.get(&module) {
+            Some(name) => name.clone(),
+            None => {
+                let name = module.short_str_lossless();
+                self.cache.put(module, name.clone());
+
+                name
+            }
+        }
     }
 }
 
@@ -107,16 +136,44 @@ impl Interpreter {
             operand_stack: Stack::new(),
             call_stack: CallStack::new(),
             paranoid_type_checks: loader.vm_config().paranoid_type_checks,
-            call_traces: Vec::new(),
+            function_calls: Vec::new(),
         };
 
         let values = interp.execute_main(
             loader, data_store, gas_meter, extensions, function, ty_args, args,
-        );
+        )?;
+
+        let mut module_resolver = ModuleNameResolver::new();
+
+        let call_traces = interp
+            .function_calls
+            .into_iter()
+            .filter_map(|call_info| {
+                let call_info = Rc::try_unwrap(call_info)
+                    .ok()
+                    .expect("BUG: `CallInfo` has references after VM execution")
+                    .into_inner();
+
+                let function_name = call_info.function.name().to_string();
+
+                match call_info.into_call_trace(loader, &mut module_resolver) {
+                    Ok(call_trace) => Some(call_trace),
+                    Err(err) => {
+                        error!(
+                            error = ?err,
+                            function_name = %function_name,
+                            "Failed to extract a call trace",
+                        );
+
+                        None
+                    }
+                }
+            })
+            .collect();
 
         Ok(InterpreterEntrypointResult {
             values,
-            call_traces: interp.call_traces,
+            call_traces,
         })
     }
 
@@ -144,74 +201,33 @@ impl Interpreter {
         }
 
         let mut current_frame = self
-            .make_new_frame(function, ty_args, locals)
+            .make_new_frame(function, ty_args, locals, loader, data_store, 1)
             .map_err(|err| self.set_location(err))?;
-
-        let (args_types, args_values) =
-            current_frame.extract_types_and_arguments(loader, data_store);
-
-        let call_trace = CallTrace {
-            depth: self.call_stack.len() as u32,
-            call_type: match !current_frame.ty_args.is_empty() {
-                true => CallType::CallGeneric,
-                false => CallType::Call,
-            },
-            module_id: current_frame
-                .function
-                .module_id()
-                .map(|module_id| module_id.short_str_lossless()),
-            function: current_frame.function.name().into(),
-            ty_args: current_frame
-                .ty_args
-                .iter()
-                .map(|ty| {
-                    loader
-                        .type_to_type_layout(ty)
-                        .unwrap()
-                        .to_string()
-                        .into_bytes()
-                })
-                .collect(),
-            args_types,
-            args_values,
-            gas_used: 0,
-            err: None,
-        };
-
-        self.call_traces.push(call_trace);
 
         let mut gas_used_before_call = gas_meter.charged_already_total().unwrap();
 
         loop {
             let resolver = current_frame.resolver(loader);
-            let exit_code = current_frame //self
+            let execution_result = current_frame
                 .execute_code(&resolver, self, data_store, gas_meter)
-                .map_err(|err| {
-                    let gas_used_after_call = gas_meter.charged_already_total().unwrap();
-
-                    if let Some(call_trace) =
-                        self.call_traces.get_mut(current_frame.call_trace_index)
-                    {
-                        call_trace.err = Some(err.clone().into_vm_status());
-                        call_trace.gas_used += gas_used_after_call
-                            .checked_sub(gas_used_before_call)
-                            .unwrap()
-                            .value();
-                    }
-
-                    self.maybe_core_dump(err, &current_frame)
-                })?;
+                .map_err(|err| self.maybe_core_dump(err, &current_frame));
 
             let gas_used_after_call = gas_meter.charged_already_total().unwrap();
 
-            if let Some(call_trace) = self.call_traces.get_mut(current_frame.call_trace_index) {
-                call_trace.gas_used += gas_used_after_call
+            let exit_code = {
+                let mut call_info = current_frame.call_info.borrow_mut();
+
+                call_info.gas_used += gas_used_after_call
                     .checked_sub(gas_used_before_call)
                     .unwrap()
                     .value();
-            } else {
-                warn!("Failed to locate Call Trace after successful frame execution");
-            }
+
+                execution_result.map_err(|err| {
+                    call_info.err = Some(err.clone().into_vm_status());
+
+                    err
+                })?
+            };
 
             gas_used_before_call = gas_used_after_call;
 
@@ -230,15 +246,13 @@ impl Interpreter {
 
                             let gas_used_after_call = gas_meter.charged_already_total().unwrap();
 
-                            if let Some(call_trace) =
-                                self.call_traces.get_mut(current_frame.call_trace_index)
-                            {
-                                call_trace.err = Some(err.clone().into_vm_status());
-                                call_trace.gas_used += gas_used_after_call
-                                    .checked_sub(gas_used_before_call)
-                                    .unwrap()
-                                    .value();
-                            }
+                            let mut call_info = current_frame.call_info.borrow_mut();
+
+                            call_info.err = Some(err.clone().into_vm_status());
+                            call_info.gas_used += gas_used_after_call
+                                .checked_sub(gas_used_before_call)
+                                .unwrap()
+                                .value();
 
                             err
                         })?;
@@ -294,6 +308,7 @@ impl Interpreter {
                         .make_call_frame(func, vec![], loader, data_store)
                         .map_err(|e| self.set_location(e))
                         .map_err(|err| self.maybe_core_dump(err, &current_frame))?;
+
                     self.call_stack.push(current_frame).map_err(|frame| {
                         let err = PartialVMError::new(StatusCode::CALL_STACK_OVERFLOW);
                         let err = set_err_info!(frame, err);
@@ -344,6 +359,7 @@ impl Interpreter {
                         .make_call_frame(func, ty_args, loader, data_store)
                         .map_err(|e| self.set_location(e))
                         .map_err(|err| self.maybe_core_dump(err, &current_frame))?;
+
                     self.call_stack.push(current_frame).map_err(|frame| {
                         let err = PartialVMError::new(StatusCode::CALL_STACK_OVERFLOW);
                         let err = set_err_info!(frame, err);
@@ -384,51 +400,27 @@ impl Interpreter {
             }
         }
 
-        let frame = self.make_new_frame(func, ty_args, locals)?;
-
-        let (args_types, args_values) = frame.extract_types_and_arguments(loader, data_store);
-
-        let call_trace = CallTrace {
-            depth: self.call_stack.len() as u32 + 1,
-            call_type: match !frame.ty_args.is_empty() {
-                true => CallType::CallGeneric,
-                false => CallType::Call,
-            },
-            module_id: frame
-                .function
-                .module_id()
-                .map(|module_id| module_id.short_str_lossless()),
-            function: frame.function.name().into(),
-            ty_args: frame
-                .ty_args
-                .iter()
-                .map(|ty| match loader.type_to_type_layout(ty) {
-                    Err(err) => {
-                        warn!("Failed to convert type to type_layout, error: {}", err);
-                        vec![]
-                    }
-                    Ok(value) => value.to_string().into_bytes(),
-                })
-                .collect(),
-            args_types,
-            args_values,
-            gas_used: 0,
-            err: None,
-        };
-
-        self.call_traces.push(call_trace);
-
-        Ok(frame)
+        self.make_new_frame(
+            func,
+            ty_args,
+            locals,
+            loader,
+            data_store,
+            self.call_stack.len() as u32 + 2,
+        )
     }
 
     /// Create a new `Frame` given a `Function` and the function `Locals`.
     ///
     /// The locals must be loaded before calling this.
     fn make_new_frame(
-        &self,
+        &mut self,
         function: Arc<Function>,
         ty_args: Vec<Type>,
         locals: Locals,
+        loader: &Loader,
+        data_store: &mut impl DataStore,
+        depth: u32,
     ) -> PartialVMResult<Frame> {
         let local_tys = if self.paranoid_type_checks {
             if ty_args.is_empty() {
@@ -443,13 +435,25 @@ impl Interpreter {
         } else {
             vec![]
         };
+
+        let call_info = Rc::new(RefCell::new(CallInfo::new(
+            function.clone(),
+            ty_args.clone(),
+            &locals,
+            depth,
+            loader,
+            data_store,
+        )?));
+
+        self.function_calls.push(call_info.clone());
+
         Ok(Frame {
             pc: 0,
             locals,
             function,
             ty_args,
             local_tys,
-            call_trace_index: self.call_traces.len(),
+            call_info,
         })
     }
 
@@ -1113,7 +1117,160 @@ struct Frame {
     function: Arc<Function>,
     ty_args: Vec<Type>,
     local_tys: Vec<Type>,
-    call_trace_index: usize,
+    call_info: Rc<RefCell<CallInfo>>,
+}
+
+/// Stores call info of each function evaluated.
+/// Used as an intermediate type to collect [`CallTrace`].
+///
+/// It is important to call `Loader::type_to_type_layout` after the code execution,
+/// as it breaks a type cache.
+struct CallInfo {
+    function: Arc<Function>,
+    args: Vec<(Type, Value)>,
+    ty_args: Vec<Type>,
+    depth: u32,
+    gas_used: u64,
+    err: Option<VMStatus>,
+}
+
+impl CallInfo {
+    pub(crate) fn new(
+        function: Arc<Function>,
+        ty_args: Vec<Type>,
+        locals: &Locals,
+        depth: u32,
+        loader: &Loader,
+        data_store: &mut impl DataStore,
+    ) -> PartialVMResult<Self> {
+        let args = match function.module_id() {
+            None => vec![],
+            Some(module_id) => {
+                loader
+                    .function_parameters(&function, module_id, data_store)
+                    .map_err(|e| e.to_partial())?
+                    .enumerate()
+                    .map(|(idx, ty)| {
+                        let ty = ty?.subst(&ty_args)?;
+
+                        let value = match ty {
+                            // Trying to read a value by reference before it is invalidated
+                            Type::Reference(_) | Type::MutableReference(_) => {
+                                let value = locals.copy_loc(idx)?;
+                                let ref_value = value.value_as::<Reference>()?;
+
+                                ref_value.read_ref()?
+                            }
+                            _ => locals.copy_loc(idx)?,
+                        };
+
+                        PartialVMResult::Ok((ty, value))
+                    })
+                    .filter_map(|result| match result {
+                        Ok(ok) => Some(ok),
+                        Err(err) => {
+                            error!(
+                                error = ?err,
+                                function = %function.pretty_string(),
+                                "Failed to extract function argument",
+                            );
+
+                            None
+                        }
+                    })
+                    .collect()
+            }
+        };
+
+        Ok(CallInfo {
+            function,
+            args,
+            ty_args,
+            depth,
+            gas_used: 0,
+            err: None,
+        })
+    }
+
+    pub(crate) fn into_call_trace(
+        self,
+        loader: &Loader,
+        module_resolver: &mut ModuleNameResolver,
+    ) -> VMResult<CallTrace> {
+        let ty_args = self.extract_type_arguments(loader);
+
+        let call_type = if ty_args.is_empty() {
+            CallType::Call
+        } else {
+            CallType::CallGeneric
+        };
+
+        let module_id = self
+            .function
+            .module_id()
+            .map(|module| module_resolver.short_str_lossless(module.clone()));
+        let err = self.err.clone();
+        let gas_used = self.gas_used;
+
+        Ok(CallTrace {
+            depth: self.depth,
+            call_type,
+            module_id,
+            function: self.function.name().to_string(),
+            ty_args,
+            args: self.extract_arguments(loader),
+            gas_used,
+            err,
+        })
+    }
+
+    fn extract_arguments(self, loader: &Loader) -> Vec<MoveValue> {
+        self.args
+            .into_iter()
+            .map(|(ty, value)| {
+                let ty = match ty {
+                    Type::Reference(ty) | Type::MutableReference(ty) => *ty,
+                    _ => ty,
+                };
+
+                let ty_layout = loader.type_to_fully_annotated_layout(&ty)?;
+                let move_value = value.try_as_move_value(&ty_layout)?;
+
+                PartialVMResult::Ok(move_value)
+            })
+            .filter_map(|result| match result {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    error!(
+                        error = ?err,
+                        function = %self.function.pretty_string(),
+                        "Failed to extract function argument",
+                    );
+
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn extract_type_arguments(&self, loader: &Loader) -> Vec<MoveTypeLayout> {
+        self.ty_args
+            .iter()
+            .filter_map(|ty| match loader.type_to_type_layout(ty) {
+                Ok(ty) => Some(ty),
+                Err(err) => {
+                    error!(
+                        error = ?err,
+                        ?ty,
+                        function = %self.function.pretty_string(),
+                        "Failed to extract type argument",
+                    );
+
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 /// An `ExitCode` from `execute_code_unit`.
@@ -2393,155 +2550,5 @@ impl Frame {
             None => Location::Script,
             Some(id) => Location::Module(id.clone()),
         }
-    }
-
-    fn extract_types_and_arguments(
-        &self,
-        loader: &Loader,
-        data_store: &mut impl DataStore,
-    ) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
-        if self.function.module_id().is_none() {
-            return (vec![], vec![]);
-        }
-
-        let function_parameters_result = loader
-            .function_parameters(
-                &self.function,
-                self.function.module_id().unwrap(),
-                data_store,
-            )
-            .unwrap()
-            .into_iter()
-            .map(|ty| ty.subst(&self.ty_args))
-            .collect::<PartialVMResult<Vec<_>>>();
-
-        let function_parameters: Vec<Type> = match function_parameters_result {
-            Err(err) => {
-                warn!("Failed to extract function parameters, {}", err);
-
-                return (vec![], vec![]);
-            }
-            Ok(value) => value,
-        };
-
-        let mut args_types: Vec<Vec<u8>> = vec![];
-        let mut args_values: Vec<Vec<u8>> = vec![];
-
-        for i in 0..function_parameters.len() {
-            let arg_type_result = function_parameters.get(i);
-
-            let arg_type = match arg_type_result {
-                Some(arg_type) => arg_type,
-                None => {
-                    warn!("Failed to get function parameter by index {}", i);
-
-                    continue;
-                }
-            };
-
-            let arg_type_layout: MoveTypeLayout;
-            let arg_value: Vec<u8>;
-
-            match arg_type {
-                Type::Reference(_) | Type::MutableReference(_) => {
-                    arg_type_layout = match loader.reference_type_to_type_layout(arg_type) {
-                        Err(err) => {
-                            warn!(
-                                "Failed to convert reference type to type layout, error: {}",
-                                err
-                            );
-
-                            continue;
-                        }
-                        Ok(value) => value,
-                    };
-
-                    let value = match self.locals.copy_loc(i) {
-                        Err(err) => {
-                            warn!(
-                                "Failed to copy primitive form loc: {}, error: {}",
-                                i.clone(),
-                                err
-                            );
-
-                            continue;
-                        }
-                        Ok(value) => value,
-                    };
-
-                    let ref_value = match value.value_as::<Reference>() {
-                        Err(err) => {
-                            warn!(
-                                "Failed to convert reference as value reference, error: {}",
-                                err
-                            );
-
-                            continue;
-                        }
-                        Ok(value) => value,
-                    };
-
-                    let ref_arg_value = match ref_value.read_ref() {
-                        Err(err) => {
-                            warn!("Failed to read reference, error: {}", err);
-
-                            continue;
-                        }
-                        Ok(value) => value,
-                    };
-
-                    let arg_value_result = ref_arg_value.simple_serialize(&arg_type_layout);
-
-                    arg_value = match arg_value_result {
-                        Some(arg_value) => arg_value,
-                        None => {
-                            warn!("Failed to serialize primitive");
-
-                            vec![]
-                        }
-                    };
-                }
-                _ => {
-                    arg_type_layout = match loader.type_to_type_layout(arg_type) {
-                        Err(err) => {
-                            warn!(
-                                "Failed to convert primitive type to type layout, error: {}",
-                                err
-                            );
-
-                            continue;
-                        }
-                        Ok(value) => value,
-                    };
-
-                    let value = match self.locals.copy_loc(i) {
-                        Err(err) => {
-                            warn!(
-                                "Failed to copy primitive form loc: {}, error: {}",
-                                i,
-                                err
-                            );
-
-                            continue;
-                        }
-                        Ok(value) => value,
-                    };
-
-                    arg_value = match value.simple_serialize(&arg_type_layout) {
-                        Some(arg_value) => arg_value,
-                        None => {
-                            warn!("Failed to serialize primitive");
-
-                            vec![]
-                        }
-                    };
-                }
-            };
-
-            args_types.push(arg_type_layout.to_string().into_bytes());
-            args_values.push(arg_value);
-        }
-
-        (args_types, args_values)
     }
 }
