@@ -173,7 +173,7 @@ fn run(
             args,
             &mut UnmeteredGasMeter,
         )
-        .and_then(|ret_values| Ok(ret_values.call_traces))
+        .map(|ret_values| ret_values.call_traces)
 }
 
 type ModuleCode = (ModuleId, String);
