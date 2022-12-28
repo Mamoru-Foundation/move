@@ -33,9 +33,7 @@ use move_vm_types::{
 
 use crate::native_extensions::NativeContextExtensions;
 use lru::LruCache;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::{cmp::min, collections::VecDeque, fmt::Write, mem, sync::Arc};
+use std::{cell::RefCell, cmp::min, collections::VecDeque, fmt::Write, mem, rc::Rc, sync::Arc};
 use tracing::error;
 
 macro_rules! debug_write {

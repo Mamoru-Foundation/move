@@ -17,10 +17,10 @@ pub mod parser;
 #[cfg(any(test, feature = "fuzzing"))]
 pub mod proptest_types;
 pub mod resolver;
+pub mod trace;
 pub mod transaction_argument;
 pub mod u256;
 #[cfg(test)]
 mod unit_tests;
 pub mod value;
 pub mod vm_status;
-pub mod trace;

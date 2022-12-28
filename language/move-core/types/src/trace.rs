@@ -1,5 +1,7 @@
-use crate::value::{MoveTypeLayout, MoveValue};
-use crate::vm_status::VMStatus;
+use crate::{
+    value::{MoveTypeLayout, MoveValue},
+    vm_status::VMStatus,
+};
 
 #[derive(Clone, Debug)]
 pub enum CallType {

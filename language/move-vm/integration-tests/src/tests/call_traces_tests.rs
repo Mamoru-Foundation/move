@@ -1,11 +1,13 @@
 use crate::compiler::{as_module, compile_units};
 use expect_test::expect;
 use move_binary_format::errors::VMResult;
-use move_core_types::account_address::AccountAddress;
-use move_core_types::identifier::Identifier;
-use move_core_types::language_storage::{ModuleId, TypeTag};
-use move_core_types::trace::CallTrace;
-use move_core_types::value::MoveValue;
+use move_core_types::{
+    account_address::AccountAddress,
+    identifier::Identifier,
+    language_storage::{ModuleId, TypeTag},
+    trace::CallTrace,
+    value::MoveValue,
+};
 use move_vm_runtime::move_vm::MoveVM;
 use move_vm_test_utils::InMemoryStorage;
 use move_vm_types::gas::UnmeteredGasMeter;

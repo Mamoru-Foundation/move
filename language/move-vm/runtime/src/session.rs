@@ -17,6 +17,7 @@ use move_core_types::{
     identifier::IdentStr,
     language_storage::{ModuleId, TypeTag},
     resolver::MoveResolver,
+    trace::CallTrace,
     value::MoveTypeLayout,
 };
 use move_vm_types::{
@@ -25,7 +26,6 @@ use move_vm_types::{
     loaded_data::runtime_types::{CachedStructIndex, StructType, Type},
 };
 use std::{borrow::Borrow, sync::Arc};
-use move_core_types::trace::CallTrace;
 
 pub struct Session<'r, 'l, S> {
     pub(crate) runtime: &'l VMRuntime,
