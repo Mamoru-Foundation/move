@@ -1098,26 +1098,25 @@ impl CallInfo {
             .parameter_types()
             .iter()
             .enumerate()
-            .filter_map(|(idx, ty)| {
+            .map(|(idx, ty)| {
                 let ty = if ty_args.is_empty() {
                     ty.clone()
                 } else {
-                    ty.subst(&ty_args).ok()?
+                    ty.subst(&ty_args)?
                 };
 
                 let value = match ty {
                     // Trying to read a value by reference before it is invalidated
                     Type::Reference(_) | Type::MutableReference(_) => {
-                        // let value = locals.copy_loc(idx)?;
-                        // let ref_value = value.value_as::<Reference>()?;
-                        //
-                        // ref_value.read_ref()?
-                        return None;
+                        let value = locals.copy_loc(idx)?;
+                        let ref_value = value.value_as::<Reference>()?;
+
+                        ref_value.read_ref()?
                     }
-                    _ => locals.copy_loc(idx).ok()?,
+                    _ => locals.copy_loc(idx)?,
                 };
 
-                Some(PartialVMResult::Ok((ty, value)))
+                PartialVMResult::Ok((ty, value))
             })
             .filter_map(|result| match result {
                 Ok(ok) => Some(ok),
@@ -1168,16 +1167,18 @@ impl CallInfo {
     fn extract_arguments(&self, loader: &Loader) -> Vec<MoveValue> {
         self.args
             .iter()
-            .map(|(ty, value)| {
+            .filter_map(|(ty, value)| {
                 let ty = match ty {
-                    Type::Reference(ty) | Type::MutableReference(ty) => ty,
+                    Type::Reference(_ty) | Type::MutableReference(_ty) => {
+                        return None;
+                    },
                     _ => ty,
                 };
 
-                let ty_layout = loader.type_to_fully_annotated_layout(ty)?;
-                let move_value = value.try_as_move_value(&ty_layout)?;
+                let ty_layout = loader.type_to_fully_annotated_layout(ty).ok()?;
+                let move_value = value.try_as_move_value(&ty_layout).ok()?;
 
-                PartialVMResult::Ok(move_value)
+                Some(PartialVMResult::Ok(move_value))
             })
             .filter_map(|result| match result {
                 Ok(value) => Some(value),
