@@ -1098,25 +1098,26 @@ impl CallInfo {
             .parameter_types()
             .iter()
             .enumerate()
-            .map(|(idx, ty)| {
+            .filter_map(|(idx, ty)| {
                 let ty = if ty_args.is_empty() {
                     ty.clone()
                 } else {
-                    ty.subst(&ty_args)?
+                    ty.subst(&ty_args).ok()?
                 };
 
                 let value = match ty {
                     // Trying to read a value by reference before it is invalidated
                     Type::Reference(_) | Type::MutableReference(_) => {
-                        let value = locals.copy_loc(idx)?;
-                        let ref_value = value.value_as::<Reference>()?;
-
-                        ref_value.read_ref()?
+                        // let value = locals.copy_loc(idx)?;
+                        // let ref_value = value.value_as::<Reference>()?;
+                        //
+                        // ref_value.read_ref()?
+                        return None;
                     }
-                    _ => locals.copy_loc(idx)?,
+                    _ => locals.copy_loc(idx).ok()?,
                 };
 
-                PartialVMResult::Ok((ty, value))
+                Some(PartialVMResult::Ok((ty, value)))
             })
             .filter_map(|result| match result {
                 Ok(ok) => Some(ok),
