@@ -1,7 +1,7 @@
-pub use crate::language_storage::TypeTag;
-use crate::{value::MoveValue, vm_status::VMStatus};
 use crate::identifier::Identifier;
 use crate::language_storage::ModuleId;
+pub use crate::language_storage::TypeTag;
+use crate::{value::MoveValue, vm_status::VMStatus};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallType {

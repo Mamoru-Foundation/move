@@ -134,6 +134,29 @@ fn call_traces_collection() {
                 gas_used: 0,
                 err: None,
             },
+            CallTrace {
+                depth: 4,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test4",
+                ),
+                ty_args: [],
+                args: [
+                    U64(
+                        43,
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
         ]
     "#]]
     .assert_debug_eq(&traces);
@@ -152,11 +175,17 @@ fn code() -> ModuleCode {
             fun test2(x: u64, y: bool) {{
                 let f = Foo {{ x, y }};
 
-                test3(f);
+                test3(&mut f);
             }}
 
-            fun test3(f: Foo) {{
-                let _ = f;
+            // Foo is `ContainerRef`
+            fun test3(f: &mut Foo) {{
+                test4(&mut f.x);
+            }}
+
+            // x is `IndexedRef`
+            fun test4(x: &mut u64) {{
+                *x = *x + 1;
             }}
         }}
     "#,

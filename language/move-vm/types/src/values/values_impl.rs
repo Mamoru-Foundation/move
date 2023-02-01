@@ -360,6 +360,28 @@ impl ValueImpl {
             Container(c) => Container(c.copy_value()?),
         })
     }
+
+    fn copy_value_by_ref(&self) -> PartialVMResult<Self> {
+        use ValueImpl::*;
+
+        Ok(match self {
+            Invalid => Invalid,
+
+            U8(x) => U8(*x),
+            U16(x) => U16(*x),
+            U32(x) => U32(*x),
+            U64(x) => U64(*x),
+            U128(x) => U128(*x),
+            U256(x) => U256(*x),
+            Bool(x) => Bool(*x),
+            Address(x) => Address(*x),
+
+            ContainerRef(r) => ContainerRef(r.copy_value()),
+            IndexedRef(r) => IndexedRef(r.copy_value()),
+
+            Container(c) => Container(c.copy_by_ref()),
+        })
+    }
 }
 
 impl Container {
@@ -682,6 +704,24 @@ impl IndexedRef {
 
         let res = match self.container_ref.container() {
             Locals(r) | Vec(r) | Struct(r) => r.borrow()[self.idx].copy_value()?,
+            VecU8(r) => ValueImpl::U8(r.borrow()[self.idx]),
+            VecU16(r) => ValueImpl::U16(r.borrow()[self.idx]),
+            VecU32(r) => ValueImpl::U32(r.borrow()[self.idx]),
+            VecU64(r) => ValueImpl::U64(r.borrow()[self.idx]),
+            VecU128(r) => ValueImpl::U128(r.borrow()[self.idx]),
+            VecU256(r) => ValueImpl::U256(r.borrow()[self.idx]),
+            VecBool(r) => ValueImpl::Bool(r.borrow()[self.idx]),
+            VecAddress(r) => ValueImpl::Address(r.borrow()[self.idx]),
+        };
+
+        Ok(Value(res))
+    }
+
+    fn copy_by_ref(&self) -> PartialVMResult<Value> {
+        use Container::*;
+
+        let res = match self.container_ref.container() {
+            Locals(r) | Vec(r) | Struct(r) => r.borrow()[self.idx].copy_value_by_ref()?,
             VecU8(r) => ValueImpl::U8(r.borrow()[self.idx]),
             VecU16(r) => ValueImpl::U16(r.borrow()[self.idx]),
             VecU32(r) => ValueImpl::U32(r.borrow()[self.idx]),
@@ -3699,7 +3739,6 @@ impl ValueImpl {
             (L::U256, ValueImpl::U256(x)) => Ok(MoveValue::U256(*x)),
             (L::Bool, ValueImpl::Bool(x)) => Ok(MoveValue::Bool(*x)),
             (L::Address, ValueImpl::Address(x)) => Ok(MoveValue::Address(*x)),
-
             (L::Struct(struct_layout), ValueImpl::Container(Container::Struct(r))) => {
                 let mut fields = vec![];
                 let field_layouts = struct_layout.clone().into_fields();
@@ -3744,6 +3783,20 @@ impl ValueImpl {
                         v
                     )),
                 }
+            }
+
+            (layout, ValueImpl::ContainerRef(r)) => {
+                // Do not perform deep copy, just copy by reference
+                // it does not cause VM borrowing issue, as the value lives short
+                let container = ValueImpl::Container(r.container().copy_by_ref());
+
+                container.try_as_move_value(layout)
+            }
+
+            (layout, ValueImpl::IndexedRef(r)) => {
+                let value = r.copy_by_ref()?;
+
+                value.0.try_as_move_value(layout)
             }
 
             (layout, val) => self.err(format!("Cannot convert value {:?} as {:?}", val, layout)),
