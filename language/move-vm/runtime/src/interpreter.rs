@@ -31,6 +31,10 @@ use move_vm_types::{
 };
 
 use crate::native_extensions::NativeContextExtensions;
+use move_core_types::value::MoveValue;
+use move_vm_types::values::ValueImpl;
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::{cmp::min, collections::VecDeque, fmt::Write, mem, sync::Arc};
 use tracing::error;
 
@@ -72,6 +76,8 @@ pub(crate) struct Interpreter {
     paranoid_type_checks: bool,
     /// List of captured call traces
     call_traces: Vec<CallTrace>,
+
+    value_cache: HashMap<usize, Rc<MoveValue>>,
 }
 
 pub(crate) struct InterpreterEntrypointResult {
@@ -107,6 +113,7 @@ impl Interpreter {
             call_stack: CallStack::new(),
             paranoid_type_checks: loader.vm_config().paranoid_type_checks,
             call_traces: Vec::new(),
+            value_cache: HashMap::new(),
         };
 
         let values = interp.execute_main(
@@ -382,6 +389,7 @@ impl Interpreter {
             &locals,
             depth,
             loader,
+            &mut self.value_cache,
         ));
 
         Ok(Frame {
@@ -1070,6 +1078,7 @@ fn new_call_trace(
     locals: &Locals,
     depth: u32,
     loader: &Loader,
+    value_cache: &mut HashMap<usize, Rc<MoveValue>>,
 ) -> CallTrace {
     let args = function
         .parameter_types()
@@ -1082,15 +1091,59 @@ fn new_call_trace(
                 ty.subst(&ty_args)?
             };
 
-            let ty = match ty {
-                Type::Reference(ty) | Type::MutableReference(ty) => *ty,
-                _ => ty,
+            let (ty, is_mut_ref) = match ty {
+                // Try find reference in some rc cache if found
+                Type::Reference(ty) => (*ty, false),
+                Type::MutableReference(ty) => (*ty, true),
+                _ => (ty, false),
             };
 
             let ty_layout = loader.type_to_fully_annotated_layout(&ty)?;
 
             let value = locals.copy_loc(idx)?;
-            let move_value = value.try_as_move_value(&ty_layout)?;
+            // todo implement invalidation on mutable reference or an action
+
+            let move_value = match &value.0 {
+                ValueImpl::Container(r) => {
+                    let key = r.raw_address();
+
+                    if is_mut_ref {
+                        let _ = value_cache.remove(&key);
+                    }
+
+                    if let Some(value) = value_cache.get(&key) {
+                        Rc::clone(value)
+                    } else {
+                        let move_value = Rc::new(value.try_as_move_value(&ty_layout)?);
+
+                        value_cache.insert(key, Rc::clone(&move_value));
+
+                        move_value
+                    }
+                }
+                ValueImpl::ContainerRef(r) => {
+                    let key = r.container().raw_address();
+
+                    if let Some(is_dirty) = r.is_dirty() {
+                        if is_dirty {
+                            let _ = value_cache.remove(&key);
+                        }
+                    } else if is_mut_ref {
+                        let _ = value_cache.remove(&key);
+                    }
+
+                    if let Some(value) = value_cache.get(&key) {
+                        Rc::clone(value)
+                    } else {
+                        let move_value = Rc::new(value.try_as_move_value(&ty_layout)?);
+
+                        value_cache.insert(key, Rc::clone(&move_value));
+
+                        move_value
+                    }
+                }
+                _ => Rc::new(value.try_as_move_value(&ty_layout)?),
+            };
 
             PartialVMResult::Ok(move_value)
         })

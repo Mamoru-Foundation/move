@@ -135,6 +135,58 @@ fn call_traces_collection() {
                 err: None,
             },
             CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3_mut",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        43,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
                 depth: 4,
                 call_type: Call,
                 module_id: Some(
@@ -146,12 +198,520 @@ fn call_traces_collection() {
                     },
                 ),
                 function: Identifier(
-                    "test4",
+                    "test4_mut",
                 ),
                 ty_args: [],
                 args: [
                     U64(
                         43,
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        43,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3_mut",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        44,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 4,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test4_mut",
+                ),
+                ty_args: [],
+                args: [
+                    U64(
+                        44,
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        44,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3_mut",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        45,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 4,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test4_mut",
+                ),
+                ty_args: [],
+                args: [
+                    U64(
+                        45,
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        45,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3_mut",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        46,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 4,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test4_mut",
+                ),
+                ty_args: [],
+                args: [
+                    U64(
+                        46,
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        46,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 3,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test3_mut",
+                ),
+                ty_args: [],
+                args: [
+                    Struct(
+                        WithTypes {
+                            type_: StructTag {
+                                address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                                module: Identifier(
+                                    "M",
+                                ),
+                                name: Identifier(
+                                    "Foo",
+                                ),
+                                type_params: [],
+                            },
+                            fields: [
+                                (
+                                    Identifier(
+                                        "x",
+                                    ),
+                                    U64(
+                                        47,
+                                    ),
+                                ),
+                                (
+                                    Identifier(
+                                        "y",
+                                    ),
+                                    Bool(
+                                        true,
+                                    ),
+                                ),
+                            ],
+                        },
+                    ),
+                ],
+                gas_used: 0,
+                err: None,
+            },
+            CallTrace {
+                depth: 4,
+                call_type: Call,
+                module_id: Some(
+                    ModuleId {
+                        address: 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a,
+                        name: Identifier(
+                            "M",
+                        ),
+                    },
+                ),
+                function: Identifier(
+                    "test4_mut",
+                ),
+                ty_args: [],
+                args: [
+                    U64(
+                        47,
                     ),
                 ],
                 gas_used: 0,
@@ -175,16 +735,27 @@ fn code() -> ModuleCode {
             fun test2(x: u64, y: bool) {{
                 let f = Foo {{ x, y }};
 
-                test3(&mut f);
+                let i = 0;
+
+                while (i < 5) {{
+                    test3(&f);
+                    test3_mut(&mut f);
+                    i = i + 1;
+                }}
             }}
 
             // Foo is `ContainerRef`
-            fun test3(f: &mut Foo) {{
-                test4(&mut f.x);
+            fun test3(f: &Foo) {{
+                let _ = f.x;
+            }}
+
+            // Foo is `ContainerRef`
+            fun test3_mut(f: &mut Foo) {{
+                test4_mut(&mut f.x);
             }}
 
             // x is `IndexedRef`
-            fun test4(x: &mut u64) {{
+            fun test4_mut(x: &mut u64) {{
                 *x = *x + 1;
             }}
         }}
