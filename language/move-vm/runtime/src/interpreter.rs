@@ -34,7 +34,6 @@ use crate::native_extensions::NativeContextExtensions;
 use move_core_types::value::MoveValue;
 use move_vm_types::values::ValueImpl;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::{cmp::min, collections::VecDeque, fmt::Write, mem, sync::Arc};
 use tracing::error;
 
@@ -77,7 +76,7 @@ pub(crate) struct Interpreter {
     /// List of captured call traces
     call_traces: Vec<CallTrace>,
 
-    value_cache: HashMap<usize, Rc<MoveValue>>,
+    value_cache: HashMap<usize, Arc<MoveValue>>,
 }
 
 pub(crate) struct InterpreterEntrypointResult {
@@ -1078,7 +1077,7 @@ fn new_call_trace(
     locals: &Locals,
     depth: u32,
     loader: &Loader,
-    value_cache: &mut HashMap<usize, Rc<MoveValue>>,
+    value_cache: &mut HashMap<usize, Arc<MoveValue>>,
 ) -> CallTrace {
     let args = function
         .parameter_types()
@@ -1112,11 +1111,11 @@ fn new_call_trace(
                     }
 
                     if let Some(value) = value_cache.get(&key) {
-                        Rc::clone(value)
+                        Arc::clone(value)
                     } else {
-                        let move_value = Rc::new(value.try_as_move_value(&ty_layout)?);
+                        let move_value = Arc::new(value.try_as_move_value(&ty_layout)?);
 
-                        value_cache.insert(key, Rc::clone(&move_value));
+                        value_cache.insert(key, Arc::clone(&move_value));
 
                         move_value
                     }
@@ -1133,16 +1132,16 @@ fn new_call_trace(
                     }
 
                     if let Some(value) = value_cache.get(&key) {
-                        Rc::clone(value)
+                        Arc::clone(value)
                     } else {
-                        let move_value = Rc::new(value.try_as_move_value(&ty_layout)?);
+                        let move_value = Arc::new(value.try_as_move_value(&ty_layout)?);
 
-                        value_cache.insert(key, Rc::clone(&move_value));
+                        value_cache.insert(key, Arc::clone(&move_value));
 
                         move_value
                     }
                 }
-                _ => Rc::new(value.try_as_move_value(&ty_layout)?),
+                _ => Arc::new(value.try_as_move_value(&ty_layout)?),
             };
 
             PartialVMResult::Ok(move_value)

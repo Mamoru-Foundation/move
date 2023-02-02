@@ -3,7 +3,7 @@ pub use crate::language_storage::TypeTag;
 use crate::identifier::Identifier;
 use crate::language_storage::ModuleId;
 use crate::{value::MoveValue, vm_status::VMStatus};
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallType {
@@ -18,7 +18,7 @@ pub struct CallTrace {
     pub module_id: Option<ModuleId>,
     pub function: Identifier,
     pub ty_args: Vec<TypeTag>,
-    pub args: Vec<Rc<MoveValue>>,
+    pub args: Vec<Arc<MoveValue>>,
     pub gas_used: u64,
     pub err: Option<VMStatus>,
 }
