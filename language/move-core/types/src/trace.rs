@@ -1,8 +1,8 @@
 pub use crate::language_storage::TypeTag;
 
-use crate::identifier::Identifier;
-use crate::language_storage::ModuleId;
-use crate::{value::MoveValue, vm_status::VMStatus};
+use crate::{
+    identifier::Identifier, language_storage::ModuleId, value::MoveValue, vm_status::VMStatus,
+};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

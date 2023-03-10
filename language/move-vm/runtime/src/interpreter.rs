@@ -32,9 +32,14 @@ use move_vm_types::{
 
 use crate::native_extensions::NativeContextExtensions;
 use move_core_types::value::MoveValue;
-use move_vm_types::values::ValueImpl;
-use std::collections::HashMap;
-use std::{cmp::min, collections::VecDeque, fmt::Write, mem, sync::Arc};
+use move_vm_types::values::{ContainerId, ValueImpl};
+use std::{
+    cmp::min,
+    collections::{HashMap, VecDeque},
+    fmt::Write,
+    mem,
+    sync::Arc,
+};
 use tracing::error;
 
 macro_rules! debug_write {
@@ -62,6 +67,8 @@ macro_rules! set_err_info {
     }};
 }
 
+type MoveValueCache = HashMap<ContainerId, Arc<MoveValue>>;
+
 /// `Interpreter` instances can execute Move functions.
 ///
 /// An `Interpreter` instance is a stand alone execution context for a function.
@@ -75,7 +82,7 @@ pub(crate) struct Interpreter {
     paranoid_type_checks: bool,
     /// List of captured call traces
     call_traces: Vec<CallTrace>,
-    values_cache: HashMap<usize, Arc<MoveValue>>,
+    values_cache: MoveValueCache,
 }
 
 pub(crate) struct InterpreterEntrypointResult {
@@ -1080,7 +1087,7 @@ fn new_call_trace(
     locals: &Locals,
     depth: u32,
     loader: &Loader,
-    values_cache: &mut HashMap<usize, Arc<MoveValue>>,
+    values_cache: &mut MoveValueCache,
 ) -> CallTrace {
     let args = function
         .parameter_types()
@@ -1106,7 +1113,7 @@ fn new_call_trace(
             let move_value = match &value.0 {
                 // caches references serialization to avoid the same job when the value is not changed, but only read
                 ValueImpl::ContainerRef(r) => {
-                    let key = r.container().raw_address();
+                    let key = r.container().id();
 
                     // the container is global: `is_dirty` means the container was possibly modified
                     if let Some(is_dirty) = r.is_dirty() {
